@@ -1,0 +1,90 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+`tk` is a minimal ticket tracking system implemented in Go. Tickets are stored as markdown files with YAML frontmatter in the `.tickets/` directory. The system supports dependency tracking, partial ID matching, status management, and jq-style querying.
+
+## Build and Development Commands
+
+### Build
+```bash
+go build -o tk
+```
+
+### Run without building
+```bash
+go run main.go [command]
+```
+
+### Common operations
+```bash
+./tk new "Ticket title"                 # Create a new ticket
+./tk ls                                 # List all tickets
+./tk show <partial-id>                  # Show ticket details
+./tk dep <id> <dep-id>                  # Add dependency
+./tk dep tree <id>                      # Show dependency tree
+./tk start <id>                         # Set status to in_progress
+./tk close <id>                         # Set status to closed
+./tk query '.priority == "0"'           # Query tickets with jq syntax
+```
+
+## Architecture
+
+### Core Concepts
+
+**Ticket Storage**: Tickets are markdown files (`.tickets/{id}.md`) with YAML frontmatter containing metadata and markdown body containing title and description. The frontmatter includes fields like `id`, `status`, `deps`, `links`, `created`, `type`, `priority`, `assignee`, `external-ref`, and `parent`.
+
+**ID Generation**: Ticket IDs are generated from the current directory name using `internal/ticket/id.go:GenerateID()`. The prefix is derived by taking the first letter of each hyphen/underscore-separated segment, followed by a 4-character nanoid using lowercase alphanumeric characters (a-z0-9) for uniqueness (e.g., `gotk` directory → `g-m4k2`). The nanoid provides 36^4 = 1,679,616 possible IDs per prefix with cryptographic randomness.
+
+**Partial ID Matching**: Throughout the system, users can provide partial IDs (e.g., `5c4`) that match any ticket ID containing that substring. Resolution happens in `internal/ticket/resolver.go:ResolveID()` which first tries exact match, then partial match. Returns an error if zero or multiple matches are found.
+
+### Package Structure
+
+**`cmd/`**: Cobra command implementations. Each file implements a subcommand:
+- `root.go`: Root command setup, persistent flags, and `FileStore` initialization
+- `new.go`: Ticket creation with flags for description, priority, type, assignee, etc.
+- `list.go`: List tickets with optional status filtering
+- `show.go`: Display ticket details
+- `dep.go`: Dependency management (`dep`, `undep`, `dep tree` subcommands)
+- `status.go`, `ready.go`, `blocked.go`, `closed.go`: Status transitions
+- `edit.go`: Opens ticket in `$EDITOR`
+- `note.go`: Append timestamped notes to tickets
+- `query.go`: jq-style filtering using gojq library
+
+**`internal/ticket/`**: Core ticket domain logic
+- `ticket.go`: `Ticket` struct definition, type/status enums, constants
+- `store.go`: `FileStore` implements CRUD operations, atomic writes via temp files, partial ID resolution delegation
+- `parser.go`: Reads/writes tickets in markdown+frontmatter format, handles YAML serialization
+- `resolver.go`: Partial ID resolution with exact-then-partial matching logic
+- `id.go`: ID generation from directory name + hash
+
+**`internal/deptree/`**: Dependency tree visualization
+- `tree.go`: Builds and renders ASCII dependency trees with cycle detection, deduplication (unless `--full`), and proper indentation
+
+**`internal/query/`**: Query/filter functionality
+- `converter.go`: Converts tickets to JSON and applies jq filters using the gojq library
+
+### Key Design Patterns
+
+**Atomic Updates**: `FileStore.Update()` and `UpdateField()` write to `.tmp` files first, then atomically rename to prevent corruption.
+
+**Field Preservation**: `UpdateField()` uses regex replacement to update single fields in-place, preserving original formatting and avoiding full parse/serialize cycles.
+
+**Partial Matching**: Used consistently across all commands that accept IDs. The pattern is: accept partial string → call `ResolveID()` → get full ID → operate on ticket.
+
+**Dependency Tree Algorithm**:
+1. `computeMaxDepths()`: Iterative traversal with stack to find the deepest level each node appears (for deduplication)
+2. `computeSubtreeDepths()`: Post-order traversal to compute max depth in each subtree (for sorting)
+3. `Render()`: Prints tree with deduplication (shows each node once at its max depth) unless `--full` flag is set
+
+**Status Enum**: Valid statuses are `open`, `in_progress`, `closed` defined in `internal/ticket/ticket.go`. Commands like `ready`, `start`, `close` are convenience wrappers around `status` command.
+
+## Implementation Notes
+
+- Go modules are used (`go 1.25.5` specified in `go.mod`)
+- Primary dependencies: `spf13/cobra` (CLI), `gopkg.in/yaml.v3` (YAML parsing), `itchyny/gojq` (jq queries)
+- Default assignee comes from `git config user.name` if not specified
+- Tickets directory defaults to `.tickets` but can be overridden with `--dir` flag
+- All errors use `fmt.Errorf()` with `%w` verb for error wrapping

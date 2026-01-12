@@ -1,0 +1,90 @@
+# Ticket Management with tk
+
+This project uses **tk** for ticket tracking. Tickets are stored as markdown files with YAML frontmatter in the `.tickets/` directory.
+
+## Quick Reference
+
+```bash
+tk ready              # Find available work (no blockers)
+tk show <id>          # View ticket details
+tk start <id>         # Claim work (set status to in_progress)
+tk close <id>         # Complete work (set status to closed)
+tk ls --status=open   # List all open tickets
+```
+
+## Essential Commands
+
+### Finding Work
+
+- `tk ready` - Show open/in-progress tickets with all dependencies resolved (sorted by priority)
+- `tk show <id>` - Detailed ticket view with metadata and relationships
+- `tk start <id>` - Set status to in_progress (claim work)
+- `tk ls` - List all tickets
+- `tk ls --status=open` - All open tickets
+- `tk ls --status=in_progress` - Your active work
+- `tk ls --status=closed` - Recently closed tickets
+- `tk blocked` - Show open/in-progress tickets with unresolved dependencies
+- `tk dep tree <id>` - Show dependency tree (deduplicates by default)
+- `tk dep tree --full <id>` - Show full tree (all occurrences, no deduplication)
+
+### Creating & Updating
+
+- `tk new "Ticket title"` - Create a new ticket (defaults to status: open, type: task, priority: 2)
+  - `--type=bug|feature|task|epic|chore` - Ticket type
+  - `-p, --priority 0-4` - Priority (0=critical, 2=medium, 4=backlog)
+  - `-d, --description "..."` - Description text
+  - `-a, --assignee username` - Assign to someone
+  - `--parent <id>` - Parent ticket ID
+  - `--acceptance "..."` - Acceptance criteria
+  - `--design "..."` - Design notes
+  - `--external-ref "..."` - External reference (e.g., gh-123)
+- `tk close <id>` - Set status to closed (mark complete)
+- `tk reopen <id>` - Set status to open
+- `tk note <id> "..."` - Append timestamped note to ticket
+- `tk dep <id> <dependency-id>` - Add dependency (first ticket depends on second)
+- `tk undep <id> <dependency-id>` - Remove dependency
+- `tk link <id> <id> [id...]` - Create symmetric link between tickets (bidirectional)
+
+### Querying & Filtering
+- `tk query` - Output all tickets as JSON, one per line
+- `tk query '.priority == "0"'` - Query with jq-style filters
+- `tk query '.status == "open"'` - Find open tickets
+- `tk query '.type == "bug"'` - Find bugs
+
+## Common Workflows
+
+### Starting work:
+```bash
+tk ready              # Find available work
+tk show <id>          # Review ticket details
+tk start <id>         # Claim it
+```
+
+### Completing work:
+```bash
+tk close <id>         # Mark complete (can provide full or partial ID)
+```
+
+### Creating dependent tickets:
+```bash
+tk new "Implement feature X" --type=feature
+tk new "Write tests for X" --type=task --parent=<feature-id>
+tk dep <test-id> <feature-id>  # Tests depend on Feature (Feature blocks tests)
+```
+
+### Working with blocked tickets:
+```bash
+tk blocked            # See what's blocking progress
+tk show <id>          # View dependencies preventing work
+tk close <blocker-id> # Close the blocking ticket
+```
+
+## 🚨 CRITICAL 🚨
+
+- **File issues for remaining work** - Create tickets with `tk new` for anything that needs follow-up
+  - Create tickets for tracking strategic and/or discovered work (multi-session, dependencies, discovered work)
+- **Update ticket status** - Close finished work with `tk close <id>`
+  - Work is NOT complete until tickets are properly closed
+  - NEVER leave work in ambiguous state (e.g., started but unclear if done)
+  - Ticket state is the source of truth for project progress
+
