@@ -54,10 +54,13 @@ tk query '.status == "in_progress"'
 ## Installation
 
 ```bash
-# Clone and build
-git clone https://github.com/lo5/tk
-cd tk
-make install
+go install github.com/lo5/tk@latest
+```
+
+This installs `tk` to `$GOPATH/bin` (or `$HOME/go/bin` by default). Ensure this directory is in your PATH:
+
+```bash
+export PATH=$PATH:$HOME/go/bin
 ```
 
 ## All Commands
