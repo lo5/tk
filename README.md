@@ -4,20 +4,20 @@
 
 `tk` is similar to [beads](https://github.com/steveyegge/beads), but stores everything as simple markdown files with YAML frontmatter — no database or daemon to manage. `tk` started out as a Go port of the [ticket](https://github.com/wedow/ticket) single-file bash script, inspired by Joe Armstrong's [Minimal Viable Program](https://joearms.github.io/published/2014-06-25-minimal-viable-program.html).
 
-`tk` has no TUI, and will never have one. It is intended to be used in conjunction with `grep`/`rg`, `more`/`less`, and `yazi`/`ranger`. It's trivial to browse and edit issues directly in your editor (I personally use [yazi](https://github.com/mikavilpas/yazi.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua) inside [nvim](https://github.com/neovim/neovim)).
+`tk` has no TUI, and will never have one. It is intentionally minimal, and intended to be used in conjunction with `grep`/`rg`, `more`/`less`, and `yazi`/`ranger`. It's trivial to browse and edit issues directly in your editor (I personally use [yazi](https://github.com/mikavilpas/yazi.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua) inside [nvim](https://github.com/neovim/neovim)).
 
 ## Status
 
-`tk` is a work in progress, and intentionally minimal.
+`tk` is a work in progress.
 
 ## Workflow
 
 Use `tk` only for long-horizon tasks that cannot be completed in one shot (say 200K context sans-compaction).
 
-To get started, [install](#install) `tk` and append (AGENT_INSTRUCTIONS.md)[AGENT_INSTRUCTIONS.md] to your `CLAUDE.md` or `AGENTS.md`.
+To get started, [install](#installation) `tk` and append [AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md) to your `CLAUDE.md` or `AGENTS.md`. Customize as necessary to adapt to your workflow - there are no hard rules here.
 
-Enter plan mode with your AI agent, make a plan, ask the agent to *save the plan, break it into 5-10 issues, each with a link to the original plan and file it in `tk`*.
-From this point on, you can simply clear the context and direct the agent to *fix issue x-h42g* or *run `tk ready` and fix the next available issue*.
+Enter plan mode with your AI agent, make a plan, ask the agent to *save the plan in `./.plans`, break it into 5-10 issues, each with a link to the original plan and file it in `tk`*.
+From this point on, you can simply clear the context and direct the agent to *fix issue x-h42g* or *run `tk ready` and fix the next available issue*. Or, run multiple agents on multiple worktrees if you're feeling lucky.
 
 
 ## Key Features
