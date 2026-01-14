@@ -71,6 +71,10 @@ tk note h42 "Made progress on authentication"
 # Query tickets
 tk ls --status in_progress
 tk query '.status == "in_progress"'
+
+# Clean up dangling references
+tk prune              # Dry-run: show what would be cleaned
+tk prune --fix        # Actually remove dangling references
 ```
 
 ## All Commands
@@ -98,6 +102,7 @@ Available Commands:
   ls          List tickets
   new         Create a new ticket
   note        Append timestamped note to ticket
+  prune       Remove dangling references from tickets
   query       Output tickets as JSON
   ready       List ready tickets
   reopen      Set ticket status to open

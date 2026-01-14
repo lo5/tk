@@ -51,6 +51,12 @@ tk ls --status=open   # List all open tickets
 - `tk query '.status == "open"'` - Find open tickets
 - `tk query '.type == "bug"'` - Find bugs
 
+### Maintenance
+- `tk prune` - Dry-run: show dangling references (refs to deleted tickets)
+- `tk prune --fix` - Actually remove dangling references from deps, links, and parent fields
+  - Use case: After manually deleting ticket files (e.g., `rm .tickets/x-abc1.md`)
+  - Ensures store consistency by cleaning up orphaned references
+
 ## Common Workflows
 
 ### Starting work:

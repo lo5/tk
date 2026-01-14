@@ -37,6 +37,7 @@ func setupTestCmd(t *testing.T) (*testContext, func()) {
 		listStatus = ""
 		closedLimit = 20
 		rmForce = false
+		pruneFix = false
 	}
 
 	ctx := &testContext{
