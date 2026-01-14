@@ -1,26 +1,47 @@
 # tk
 
-`tk` is a minimal ticket tracking system for managing tasks and collaborating with AI agents on long-horizon features.
+`tk` is a minimal graph-based issue tracker for long-horizon AI agents tasks.
 
-`tk` is similar to [beads](https://github.com/steveyegge/beads), but stores everything as simple markdown files with YAML frontmatter — no database or daemon to manage. `tk` started out as a Go port of the [ticket](https://github.com/wedow/ticket) single-file bash script, inspired by Joe Armstrong's [Minimal Viable Program](https://joearms.github.io/published/2014-06-25-minimal-viable-program.html)
+`tk` is similar to [beads](https://github.com/steveyegge/beads), but stores everything as simple markdown files with YAML frontmatter — no database or daemon to manage. `tk` started out as a Go port of the [ticket](https://github.com/wedow/ticket) single-file bash script, inspired by Joe Armstrong's [Minimal Viable Program](https://joearms.github.io/published/2014-06-25-minimal-viable-program.html).
+
+`tk` has no TUI, and will never have one. It is intended to be used in conjunction with `grep`/`rg`, `more`/`less`, and `yazi`/`ranger`. It's trivial to browse and edit issues directly in your editor (I personally use [yazi](https://github.com/mikavilpas/yazi.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua) inside [nvim](https://github.com/neovim/neovim)).
+
+## Status
+
+`tk` is a work in progress, and intentionally minimal.
 
 ## Workflow
 
 Use `tk` only for long-horizon tasks that cannot be completed in one shot (say 200K context sans-compaction).
 
-Enter plan mode with your AI agent, make a plan, ask the agent to *save the plan, break it into 5-10 issues, each with a link to the original plan and file it in `tk`*. From this point on, you can simply clear the context and direct the agent to *fix issue x-h42g* or *run `tk ready` and fix the next available issue*.
+To get started, [install](#install) `tk` and append (AGENT_INSTRUCTIONS.md)[AGENT_INSTRUCTIONS.md] to your `CLAUDE.md` or `AGENTS.md`.
+
+Enter plan mode with your AI agent, make a plan, ask the agent to *save the plan, break it into 5-10 issues, each with a link to the original plan and file it in `tk`*.
+From this point on, you can simply clear the context and direct the agent to *fix issue x-h42g* or *run `tk ready` and fix the next available issue*.
+
 
 ## Key Features
 
+- **AI-friendly**: Designed to be easily traced by AI agents following dependency graphs and context
 - **File-based storage**: Tickets are `.md` files in `.tickets/`, editable in any text editor
+- **Git-friendly**: Store `.tickets/` in git (like `git-bug`) or `.gitignore` it and use as a local todo list
 - **Dependency tracking**: Define dependencies between tickets and visualize them as trees
 - **Cross-linking**: Link related tickets together for better context
 - **Partial ID matching**: Refer to tickets by any substring of their ID (e.g., `h42` matches `x-h42g`)
-- **Status management**: Track tickets as `open`, `in_progress`, or `closed`
-- **jq-style queries**: Filter tickets with powerful query expressions
-- **Git-friendly**: Store `.tickets/` in git (like `git-bug`) or gitignore it as a local todo list
-- **AI-friendly**: Designed to be easily traced by AI agents following dependency graphs and context
+- **jq-style queries**: Filter tickets with `jq` expressions
 
+
+## Installation
+
+```bash
+go install github.com/lo5/tk@latest
+```
+
+This installs `tk` to `$GOPATH/bin` (or `$HOME/go/bin` by default). Ensure this directory is in your PATH:
+
+```bash
+export PATH=$PATH:$HOME/go/bin
+```
 
 ## Quick Start
 
@@ -51,17 +72,6 @@ tk note h42 "Made progress on authentication"
 tk ls --status in_progress
 tk query '.status == "in_progress"'
 ```
-## Installation
-
-```bash
-go install github.com/lo5/tk@latest
-```
-
-This installs `tk` to `$GOPATH/bin` (or `$HOME/go/bin` by default). Ensure this directory is in your PATH:
-
-```bash
-export PATH=$PATH:$HOME/go/bin
-```
 
 ## All Commands
 
@@ -71,7 +81,7 @@ export PATH=$PATH:$HOME/go/bin
 tk - minimal ticket system with dependency tracking
 
 Tickets are stored as markdown files with YAML frontmatter in .tickets/
-Supports partial ID matching (e.g., 'tk show h42' matches 'nw-h42g')
+Supports partial ID matching (e.g., 'tk show h42' matches 'x-h42g')
 
 Usage:
   tk [command]
@@ -111,7 +121,7 @@ Tickets are markdown files stored in `.tickets/{id}.md` with YAML frontmatter:
 
 ```yaml
 ---
-id: gotk-h42g
+id: x-h42g
 status: open
 created: 2025-01-12T10:30:00Z
 deps: []
