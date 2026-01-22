@@ -72,6 +72,10 @@ tk note h42 "Made progress on authentication"
 tk ls --status in_progress
 tk query '.status == "in_progress"'
 
+# Clean up closed tickets
+tk clean              # Dry-run: show what would be deleted
+tk clean --fix        # Actually delete closed tickets
+
 # Clean up dangling references
 tk prune              # Dry-run: show what would be cleaned
 tk prune --fix        # Actually remove dangling references
@@ -92,6 +96,7 @@ Usage:
 
 Available Commands:
   blocked     List blocked tickets
+  clean       Delete all closed tickets
   close       Set ticket status to closed
   closed      List recently closed tickets
   completion  Generate the autocompletion script for the specified shell

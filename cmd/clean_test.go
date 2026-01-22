@@ -1,0 +1,786 @@
+package cmd
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/lo5/tk/internal/ticket"
+)
+
+// TestCleanNoClosedTickets - No closed tickets found
+func TestCleanNoClosedTickets(t *testing.T) {
+	t.Run("no tickets at all", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "No closed tickets found") {
+			t.Errorf("expected 'No closed tickets found', got: %s", output)
+		}
+	})
+
+	t.Run("only open tickets", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create some open tickets
+		ctx.exec("new", "Open ticket 1")
+		ctx.exec("new", "Open ticket 2")
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "No closed tickets found") {
+			t.Errorf("expected 'No closed tickets found', got: %s", output)
+		}
+	})
+
+	t.Run("only in_progress tickets", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create some in_progress tickets
+		id1, _ := ctx.exec("new", "In progress 1")
+		id1 = strings.TrimSpace(id1)
+		ctx.exec("start", id1)
+
+		id2, _ := ctx.exec("new", "In progress 2")
+		id2 = strings.TrimSpace(id2)
+		ctx.exec("start", id2)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "No closed tickets found") {
+			t.Errorf("expected 'No closed tickets found', got: %s", output)
+		}
+	})
+}
+
+// TestCleanAllClosedDeletable - All closed tickets are safe to delete
+func TestCleanAllClosedDeletable(t *testing.T) {
+	t.Run("single closed ticket", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create and close a ticket
+		id, _ := ctx.exec("new", "Closed ticket")
+		id = strings.TrimSpace(id)
+		ctx.exec("close", id)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "Found 1 closed ticket(s)") {
+			t.Errorf("expected 'Found 1 closed ticket(s)', got: %s", output)
+		}
+		if !strings.Contains(output, "1 deletable") {
+			t.Errorf("expected '1 deletable', got: %s", output)
+		}
+		if !strings.Contains(output, "0 blocked") {
+			t.Errorf("expected '0 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "Run with --fix to delete 1 deletable ticket(s)") {
+			t.Errorf("expected fix prompt, got: %s", output)
+		}
+	})
+
+	t.Run("multiple closed tickets", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create and close multiple tickets
+		for i := 1; i <= 3; i++ {
+			id, _ := ctx.exec("new", "Closed ticket")
+			id = strings.TrimSpace(id)
+			ctx.exec("close", id)
+		}
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "Found 3 closed ticket(s)") {
+			t.Errorf("expected 'Found 3 closed ticket(s)', got: %s", output)
+		}
+		if !strings.Contains(output, "3 deletable") {
+			t.Errorf("expected '3 deletable', got: %s", output)
+		}
+		if !strings.Contains(output, "0 blocked") {
+			t.Errorf("expected '0 blocked', got: %s", output)
+		}
+	})
+}
+
+// TestCleanPartialDeletable - Mix of deletable and blocked closed tickets
+func TestCleanPartialDeletable(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create closed ticket with no relationships (deletable)
+	idA, _ := ctx.exec("new", "Deletable closed")
+	idA = strings.TrimSpace(idA)
+	ctx.exec("close", idA)
+
+	// Create closed ticket with dependant (blocked)
+	idB, _ := ctx.exec("new", "Blocked closed")
+	idB = strings.TrimSpace(idB)
+	ctx.exec("close", idB)
+
+	idC, _ := ctx.exec("new", "Dependant")
+	idC = strings.TrimSpace(idC)
+	ctx.exec("dep", idC, idB)
+
+	output, err := ctx.exec("clean")
+	if err != nil {
+		t.Fatalf("clean command error: %v", err)
+	}
+
+	if !strings.Contains(output, "Found 2 closed ticket(s)") {
+		t.Errorf("expected 'Found 2 closed ticket(s)', got: %s", output)
+	}
+	if !strings.Contains(output, "1 deletable") {
+		t.Errorf("expected '1 deletable', got: %s", output)
+	}
+	if !strings.Contains(output, "1 blocked") {
+		t.Errorf("expected '1 blocked', got: %s", output)
+	}
+	if !strings.Contains(output, "Blocked tickets:") {
+		t.Errorf("expected 'Blocked tickets:' section, got: %s", output)
+	}
+	if !strings.Contains(output, idB) {
+		t.Errorf("expected blocked ticket ID %s, got: %s", idB, output)
+	}
+	if !strings.Contains(output, "has dependants") {
+		t.Errorf("expected 'has dependants' reason, got: %s", output)
+	}
+}
+
+// TestCleanRefuseWithDependants - Closed ticket has dependants (any status)
+func TestCleanRefuseWithDependants(t *testing.T) {
+	t.Run("closed ticket with open dependant", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed ticket A
+		idA, _ := ctx.exec("new", "Closed ticket")
+		idA = strings.TrimSpace(idA)
+		ctx.exec("close", idA)
+
+		// Create open ticket B that depends on A
+		idB, _ := ctx.exec("new", "Open dependant")
+		idB = strings.TrimSpace(idB)
+		ctx.exec("dep", idB, idA)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "has dependants") {
+			t.Errorf("expected 'has dependants', got: %s", output)
+		}
+	})
+
+	t.Run("closed ticket with closed dependant", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed ticket A
+		idA, _ := ctx.exec("new", "Closed ticket")
+		idA = strings.TrimSpace(idA)
+		ctx.exec("close", idA)
+
+		// Create closed ticket B that depends on A
+		idB, _ := ctx.exec("new", "Closed dependant")
+		idB = strings.TrimSpace(idB)
+		ctx.exec("dep", idB, idA)
+		ctx.exec("close", idB)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		// Both are closed, but A is blocked
+		if !strings.Contains(output, "Found 2 closed ticket(s)") {
+			t.Errorf("expected 'Found 2 closed ticket(s)', got: %s", output)
+		}
+		if !strings.Contains(output, "has dependants") {
+			t.Errorf("expected 'has dependants', got: %s", output)
+		}
+	})
+
+	t.Run("closed ticket with multiple dependants", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed ticket A
+		idA, _ := ctx.exec("new", "Closed ticket")
+		idA = strings.TrimSpace(idA)
+		ctx.exec("close", idA)
+
+		// Create multiple tickets that depend on A
+		idB, _ := ctx.exec("new", "Dependant 1")
+		idB = strings.TrimSpace(idB)
+		ctx.exec("dep", idB, idA)
+
+		idC, _ := ctx.exec("new", "Dependant 2")
+		idC = strings.TrimSpace(idC)
+		ctx.exec("dep", idC, idA)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "has dependants") {
+			t.Errorf("expected 'has dependants', got: %s", output)
+		}
+	})
+}
+
+// TestCleanRefuseWithChildren - Closed ticket has children
+func TestCleanRefuseWithChildren(t *testing.T) {
+	t.Run("closed ticket with single child", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed parent ticket
+		idParent, _ := ctx.exec("new", "Closed parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		// Create child ticket
+		idChild, _ := ctx.exec("new", "--parent", idParent, "Child ticket")
+		idChild = strings.TrimSpace(idChild)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "has children") {
+			t.Errorf("expected 'has children', got: %s", output)
+		}
+	})
+
+	t.Run("closed ticket with multiple children", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed parent ticket
+		idParent, _ := ctx.exec("new", "Closed parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		// Create multiple children
+		ctx.exec("new", "--parent", idParent, "Child 1")
+		ctx.exec("new", "--parent", idParent, "Child 2")
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "has children") {
+			t.Errorf("expected 'has children', got: %s", output)
+		}
+	})
+}
+
+// TestCleanRefuseWithLinks - Closed ticket has bidirectional links
+func TestCleanRefuseWithLinks(t *testing.T) {
+	t.Run("closed ticket with single link", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create two tickets and link them
+		idA, _ := ctx.exec("new", "Ticket A")
+		idA = strings.TrimSpace(idA)
+		ctx.exec("close", idA)
+
+		idB, _ := ctx.exec("new", "Ticket B")
+		idB = strings.TrimSpace(idB)
+
+		ctx.exec("link", idA, idB)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "has links") {
+			t.Errorf("expected 'has links', got: %s", output)
+		}
+	})
+
+	t.Run("closed ticket with multiple links", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed ticket
+		idA, _ := ctx.exec("new", "Closed ticket")
+		idA = strings.TrimSpace(idA)
+		ctx.exec("close", idA)
+
+		// Create and link multiple tickets
+		idB, _ := ctx.exec("new", "Ticket B")
+		idB = strings.TrimSpace(idB)
+		ctx.exec("link", idA, idB)
+
+		idC, _ := ctx.exec("new", "Ticket C")
+		idC = strings.TrimSpace(idC)
+		ctx.exec("link", idA, idC)
+
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked', got: %s", output)
+		}
+		if !strings.Contains(output, "has links") {
+			t.Errorf("expected 'has links', got: %s", output)
+		}
+	})
+}
+
+// TestCleanDryRunNoChanges - Verify dry-run doesn't delete anything
+func TestCleanDryRunNoChanges(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create some closed deletable tickets
+	var ids []string
+	for i := 1; i <= 3; i++ {
+		id, _ := ctx.exec("new", "Deletable ticket")
+		id = strings.TrimSpace(id)
+		ctx.exec("close", id)
+		ids = append(ids, id)
+	}
+
+	// Run clean without --fix (dry-run)
+	output, err := ctx.exec("clean")
+	if err != nil {
+		t.Fatalf("clean command error: %v", err)
+	}
+
+	if !strings.Contains(output, "Run with --fix") {
+		t.Errorf("expected dry-run prompt, got: %s", output)
+	}
+
+	// Verify all tickets still exist
+	for _, id := range ids {
+		ticket, err := ctx.store().Get(id)
+		if err != nil {
+			t.Errorf("ticket %s should still exist after dry-run: %v", id, err)
+		}
+		if ticket == nil {
+			t.Errorf("ticket %s should not be nil", id)
+		}
+	}
+
+	// Verify file existence
+	for _, id := range ids {
+		path := filepath.Join(ctx.ticketsDir, id+".md")
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("ticket file %s should still exist after dry-run", path)
+		}
+	}
+}
+
+// TestCleanFixDeletes - Verify --fix actually deletes tickets
+func TestCleanFixDeletes(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create some closed deletable tickets
+	var ids []string
+	for i := 1; i <= 3; i++ {
+		id, _ := ctx.exec("new", "Deletable ticket")
+		id = strings.TrimSpace(id)
+		ctx.exec("close", id)
+		ids = append(ids, id)
+	}
+
+	// Run clean with --fix
+	output, err := ctx.exec("clean", "--fix")
+	if err != nil {
+		t.Fatalf("clean --fix command error: %v", err)
+	}
+
+	if !strings.Contains(output, "Deleting closed tickets") {
+		t.Errorf("expected 'Deleting closed tickets' header, got: %s", output)
+	}
+
+	// Verify all "Deleted: <id>" messages
+	for _, id := range ids {
+		if !strings.Contains(output, "Deleted: "+id) {
+			t.Errorf("expected 'Deleted: %s' in output, got: %s", id, output)
+		}
+	}
+
+	if !strings.Contains(output, "Deleted 3 ticket(s)") {
+		t.Errorf("expected 'Deleted 3 ticket(s)' summary, got: %s", output)
+	}
+
+	// Verify all tickets are gone
+	for _, id := range ids {
+		_, err := ctx.store().Get(id)
+		if err == nil {
+			t.Errorf("ticket %s should be deleted", id)
+		}
+
+		// Verify file doesn't exist
+		path := filepath.Join(ctx.ticketsDir, id+".md")
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("ticket file %s should be deleted", path)
+		}
+	}
+}
+
+// TestCleanFixSkipsBlocked - Verify blocked tickets are skipped
+func TestCleanFixSkipsBlocked(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create deletable closed ticket
+	idDeletable, _ := ctx.exec("new", "Deletable")
+	idDeletable = strings.TrimSpace(idDeletable)
+	ctx.exec("close", idDeletable)
+
+	// Create blocked closed ticket (has dependant)
+	idBlocked, _ := ctx.exec("new", "Blocked")
+	idBlocked = strings.TrimSpace(idBlocked)
+	ctx.exec("close", idBlocked)
+
+	idDependant, _ := ctx.exec("new", "Dependant")
+	idDependant = strings.TrimSpace(idDependant)
+	ctx.exec("dep", idDependant, idBlocked)
+
+	// Run clean with --fix
+	output, err := ctx.exec("clean", "--fix")
+	if err != nil {
+		t.Fatalf("clean --fix command error: %v", err)
+	}
+
+	// Verify deletable was deleted
+	if !strings.Contains(output, "Deleted: "+idDeletable) {
+		t.Errorf("expected 'Deleted: %s', got: %s", idDeletable, output)
+	}
+
+	// Verify blocked was skipped
+	if strings.Contains(output, "Deleted: "+idBlocked) {
+		t.Errorf("blocked ticket %s should not be deleted, got: %s", idBlocked, output)
+	}
+
+	if !strings.Contains(output, "Deleted 1 ticket(s), skipped 1 blocked ticket(s)") {
+		t.Errorf("expected correct summary, got: %s", output)
+	}
+
+	// Verify deletable is gone
+	_, err = ctx.store().Get(idDeletable)
+	if err == nil {
+		t.Errorf("ticket %s should be deleted", idDeletable)
+	}
+
+	// Verify blocked still exists
+	ticket, err := ctx.store().Get(idBlocked)
+	if err != nil {
+		t.Errorf("blocked ticket %s should still exist: %v", idBlocked, err)
+	}
+	if ticket == nil {
+		t.Errorf("blocked ticket %s should not be nil", idBlocked)
+	}
+}
+
+// TestCleanMixedStatuses - Only closed tickets deleted, not open/in_progress
+func TestCleanMixedStatuses(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create tickets with different statuses
+	idOpen, _ := ctx.exec("new", "Open ticket")
+	idOpen = strings.TrimSpace(idOpen)
+
+	idInProgress, _ := ctx.exec("new", "In progress ticket")
+	idInProgress = strings.TrimSpace(idInProgress)
+	ctx.exec("start", idInProgress)
+
+	idClosed, _ := ctx.exec("new", "Closed ticket")
+	idClosed = strings.TrimSpace(idClosed)
+	ctx.exec("close", idClosed)
+
+	// Run clean with --fix
+	output, err := ctx.exec("clean", "--fix")
+	if err != nil {
+		t.Fatalf("clean --fix command error: %v", err)
+	}
+
+	// Verify only closed ticket was deleted
+	if !strings.Contains(output, "Deleted: "+idClosed) {
+		t.Errorf("expected closed ticket %s to be deleted, got: %s", idClosed, output)
+	}
+
+	if strings.Contains(output, idOpen) {
+		t.Errorf("open ticket %s should not be mentioned, got: %s", idOpen, output)
+	}
+
+	if strings.Contains(output, idInProgress) {
+		t.Errorf("in_progress ticket %s should not be mentioned, got: %s", idInProgress, output)
+	}
+
+	// Verify open and in_progress still exist
+	ticketOpen, err := ctx.store().Get(idOpen)
+	if err != nil || ticketOpen == nil {
+		t.Errorf("open ticket %s should still exist", idOpen)
+	}
+
+	ticketInProgress, err := ctx.store().Get(idInProgress)
+	if err != nil || ticketInProgress == nil {
+		t.Errorf("in_progress ticket %s should still exist", idInProgress)
+	}
+
+	// Verify closed is gone
+	_, err = ctx.store().Get(idClosed)
+	if err == nil {
+		t.Errorf("closed ticket %s should be deleted", idClosed)
+	}
+}
+
+// TestCleanPersistence - Verify deletions persist to disk
+func TestCleanPersistence(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create closed tickets
+	var ids []string
+	for i := 1; i <= 2; i++ {
+		id, _ := ctx.exec("new", "Ticket to delete")
+		id = strings.TrimSpace(id)
+		ctx.exec("close", id)
+		ids = append(ids, id)
+	}
+
+	// Run clean with --fix
+	_, err := ctx.exec("clean", "--fix")
+	if err != nil {
+		t.Fatalf("clean --fix command error: %v", err)
+	}
+
+	// Create new store instance to verify persistence
+	newStore := ticket.NewFileStore(ctx.ticketsDir)
+
+	// Verify tickets are deleted
+	for _, id := range ids {
+		_, err := newStore.Get(id)
+		if err == nil {
+			t.Errorf("ticket %s should be deleted in new store", id)
+		}
+	}
+
+	// Verify not in list
+	allTickets, _ := newStore.List()
+	for _, tkt := range allTickets {
+		for _, id := range ids {
+			if tkt.ID == id {
+				t.Errorf("deleted ticket %s should not appear in list", id)
+			}
+		}
+	}
+}
+
+// TestCleanNoDanglingRefs - Verify no dangling references created
+func TestCleanNoDanglingRefs(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create a closed ticket
+	idA, _ := ctx.exec("new", "Closed ticket")
+	idA = strings.TrimSpace(idA)
+	ctx.exec("close", idA)
+
+	// Create another ticket that depends on A
+	idB, _ := ctx.exec("new", "Dependant")
+	idB = strings.TrimSpace(idB)
+	ctx.exec("dep", idB, idA)
+
+	// Run clean with --fix (should skip A because B depends on it)
+	_, err := ctx.exec("clean", "--fix")
+	if err != nil {
+		t.Fatalf("clean --fix command error: %v", err)
+	}
+
+	// Verify A still exists (was blocked)
+	ticketA, err := ctx.store().Get(idA)
+	if err != nil {
+		t.Errorf("blocked ticket %s should still exist: %v", idA, err)
+	}
+	if ticketA == nil {
+		t.Errorf("blocked ticket %s should not be nil", idA)
+	}
+
+	// Verify B still has valid dependency
+	ticketB, err := ctx.store().Get(idB)
+	if err != nil {
+		t.Fatalf("ticket B should exist: %v", err)
+	}
+
+	hasDepA := false
+	for _, dep := range ticketB.Deps {
+		if dep == idA {
+			hasDepA = true
+			break
+		}
+	}
+	if !hasDepA {
+		t.Errorf("ticket B should still have dependency on A")
+	}
+
+	// Verify the dependency is valid (A exists)
+	_, err = ctx.store().Get(idA)
+	if err != nil {
+		t.Errorf("dependency target %s should exist: %v", idA, err)
+	}
+}
+
+// TestCleanNoArgs - Verify clean takes no arguments
+func TestCleanNoArgs(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	_, err := ctx.exec("clean", "extra-arg")
+	if err == nil {
+		t.Error("clean should error with extra arguments")
+	}
+}
+
+// TestCleanFixWithNoClosedTickets - --fix with no closed tickets
+func TestCleanFixWithNoClosedTickets(t *testing.T) {
+	t.Run("no tickets at all", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		output, err := ctx.exec("clean", "--fix")
+		if err != nil {
+			t.Fatalf("clean --fix command error: %v", err)
+		}
+
+		if !strings.Contains(output, "No closed tickets found") {
+			t.Errorf("expected 'No closed tickets found', got: %s", output)
+		}
+	})
+
+	t.Run("all closed tickets blocked", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed ticket with child (blocked)
+		idParent, _ := ctx.exec("new", "Parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		ctx.exec("new", "--parent", idParent, "Child")
+
+		output, err := ctx.exec("clean", "--fix")
+		if err != nil {
+			t.Fatalf("clean --fix command error: %v", err)
+		}
+
+		if !strings.Contains(output, "No deletable tickets") {
+			t.Errorf("expected 'No deletable tickets', got: %s", output)
+		}
+		if !strings.Contains(output, "1 closed ticket(s) are blocked") {
+			t.Errorf("expected 'blocked' message, got: %s", output)
+		}
+	})
+}
+
+// TestCleanClosedDependsOnClosed - Closed ticket depends on another closed ticket
+func TestCleanClosedDependsOnClosed(t *testing.T) {
+	ctx, cleanup := setupTestCmd(t)
+	defer cleanup()
+
+	// Create ticket A, close it
+	idA, _ := ctx.exec("new", "Ticket A")
+	idA = strings.TrimSpace(idA)
+	ctx.exec("close", idA)
+
+	// Create ticket B, make it depend on A, then close it
+	idB, _ := ctx.exec("new", "Ticket B")
+	idB = strings.TrimSpace(idB)
+	ctx.exec("dep", idB, idA)
+	ctx.exec("close", idB)
+
+	// Both are closed
+	// A is blocked (B depends on it)
+	// B is deletable (its dependency being closed doesn't block deletion)
+
+	output, err := ctx.exec("clean")
+	if err != nil {
+		t.Fatalf("clean command error: %v", err)
+	}
+
+	if !strings.Contains(output, "Found 2 closed ticket(s)") {
+		t.Errorf("expected 'Found 2 closed ticket(s)', got: %s", output)
+	}
+	if !strings.Contains(output, "1 deletable") {
+		t.Errorf("expected '1 deletable', got: %s", output)
+	}
+	if !strings.Contains(output, "1 blocked") {
+		t.Errorf("expected '1 blocked', got: %s", output)
+	}
+
+	// Run with --fix
+	output, err = ctx.exec("clean", "--fix")
+	if err != nil {
+		t.Fatalf("clean --fix command error: %v", err)
+	}
+
+	// B should be deleted, A should remain
+	if !strings.Contains(output, "Deleted: "+idB) {
+		t.Errorf("expected ticket B to be deleted, got: %s", output)
+	}
+
+	// Verify A still exists
+	ticketA, err := ctx.store().Get(idA)
+	if err != nil || ticketA == nil {
+		t.Errorf("ticket A should still exist")
+	}
+
+	// Verify B is deleted
+	_, err = ctx.store().Get(idB)
+	if err == nil {
+		t.Errorf("ticket B should be deleted")
+	}
+}

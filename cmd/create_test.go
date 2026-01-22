@@ -38,6 +38,7 @@ func setupTestCmd(t *testing.T) (*testContext, func()) {
 		closedLimit = 20
 		rmForce = false
 		pruneFix = false
+		cleanFix = false
 	}
 
 	ctx := &testContext{
