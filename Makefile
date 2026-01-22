@@ -4,7 +4,6 @@
 # Binary name
 BINARY_NAME=tk
 BUILD_DIR=.
-INSTALL_PATH=~/.local/bin
 
 # Go commands
 GOCMD=go
@@ -38,11 +37,11 @@ build-all: ## Build for all platforms
 	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64
 
-install: build ## Install binary to system
-	cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
+install: ## Install binary to system
+	$(GOCMD) install
 
 uninstall: ## Uninstall binary from system
-	rm -f $(INSTALL_PATH)/$(BINARY_NAME)
+	rm -f $$(go env GOPATH)/bin/$(BINARY_NAME)
 
 clean: ## Remove build artifacts and test files
 	$(GOCLEAN)
