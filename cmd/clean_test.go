@@ -282,8 +282,8 @@ func TestCleanRefuseWithChildren(t *testing.T) {
 		if !strings.Contains(output, "1 blocked") {
 			t.Errorf("expected '1 blocked', got: %s", output)
 		}
-		if !strings.Contains(output, "has children") {
-			t.Errorf("expected 'has children', got: %s", output)
+		if !strings.Contains(output, "has non-closed children") {
+			t.Errorf("expected 'has non-closed children', got: %s", output)
 		}
 	})
 
@@ -308,8 +308,157 @@ func TestCleanRefuseWithChildren(t *testing.T) {
 		if !strings.Contains(output, "1 blocked") {
 			t.Errorf("expected '1 blocked', got: %s", output)
 		}
-		if !strings.Contains(output, "has children") {
-			t.Errorf("expected 'has children', got: %s", output)
+		if !strings.Contains(output, "has non-closed children") {
+			t.Errorf("expected 'has non-closed children', got: %s", output)
+		}
+	})
+}
+
+// TestCleanClosedParentWithAllClosedChildren - Closed parent with all closed children should be deletable
+func TestCleanClosedParentWithAllClosedChildren(t *testing.T) {
+	t.Run("closed parent with single closed child", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed parent ticket
+		idParent, _ := ctx.exec("new", "Closed parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		// Create closed child
+		idChild, _ := ctx.exec("new", "--parent", idParent, "Closed child")
+		idChild = strings.TrimSpace(idChild)
+		ctx.exec("close", idChild)
+
+		// Both tickets are closed - both should be deletable
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "Found 2 closed ticket(s)") {
+			t.Errorf("expected 'Found 2 closed ticket(s)', got: %s", output)
+		}
+		if !strings.Contains(output, "2 deletable") {
+			t.Errorf("expected '2 deletable', got: %s", output)
+		}
+		if !strings.Contains(output, "0 blocked") {
+			t.Errorf("expected '0 blocked', got: %s", output)
+		}
+	})
+
+	t.Run("closed parent with multiple closed children", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed parent ticket
+		idParent, _ := ctx.exec("new", "Closed parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		// Create multiple closed children
+		idChild1, _ := ctx.exec("new", "--parent", idParent, "Closed child 1")
+		idChild1 = strings.TrimSpace(idChild1)
+		ctx.exec("close", idChild1)
+
+		idChild2, _ := ctx.exec("new", "--parent", idParent, "Closed child 2")
+		idChild2 = strings.TrimSpace(idChild2)
+		ctx.exec("close", idChild2)
+
+		// All tickets are closed - all should be deletable
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "Found 3 closed ticket(s)") {
+			t.Errorf("expected 'Found 3 closed ticket(s)', got: %s", output)
+		}
+		if !strings.Contains(output, "3 deletable") {
+			t.Errorf("expected '3 deletable', got: %s", output)
+		}
+		if !strings.Contains(output, "0 blocked") {
+			t.Errorf("expected '0 blocked', got: %s", output)
+		}
+	})
+}
+
+// TestCleanClosedParentWithMixedStatusChildren - Closed parent with mixed status children
+func TestCleanClosedParentWithMixedStatusChildren(t *testing.T) {
+	t.Run("closed parent with closed and open children", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed parent ticket
+		idParent, _ := ctx.exec("new", "Closed parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		// Create one closed child
+		idClosedChild, _ := ctx.exec("new", "--parent", idParent, "Closed child")
+		idClosedChild = strings.TrimSpace(idClosedChild)
+		ctx.exec("close", idClosedChild)
+
+		// Create one open child
+		idOpenChild, _ := ctx.exec("new", "--parent", idParent, "Open child")
+		idOpenChild = strings.TrimSpace(idOpenChild)
+
+		// Parent should be blocked due to open child
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean command error: %v", err)
+		}
+
+		if !strings.Contains(output, "Found 2 closed ticket(s)") {
+			t.Errorf("expected 'Found 2 closed ticket(s)' (parent + closed child), got: %s", output)
+		}
+		if !strings.Contains(output, "1 deletable") {
+			t.Errorf("expected '1 deletable' (closed child only), got: %s", output)
+		}
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked' (parent), got: %s", output)
+		}
+		if !strings.Contains(output, "has non-closed children") {
+			t.Errorf("expected 'has non-closed children', got: %s", output)
+		}
+	})
+
+	t.Run("closed parent with closed and in_progress children", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		// Create closed parent ticket
+		idParent, _ := ctx.exec("new", "Closed parent")
+		idParent = strings.TrimSpace(idParent)
+		ctx.exec("close", idParent)
+
+		// Create one closed child
+		idClosedChild, _ := ctx.exec("new", "--parent", idParent, "Closed child")
+		idClosedChild = strings.TrimSpace(idClosedChild)
+		ctx.exec("close", idClosedChild)
+
+		// Create one in_progress child
+		idInProgressChild, _ := ctx.exec("new", "--parent", idParent, "In progress child")
+		idInProgressChild = strings.TrimSpace(idInProgressChild)
+		ctx.exec("start", idInProgressChild)
+
+		// Parent should be blocked due to in_progress child
+		output, err := ctx.exec("clean")
+		if err != nil {
+			t.Fatalf("clean --fix command error: %v", err)
+		}
+
+		if !strings.Contains(output, "Found 2 closed ticket(s)") {
+			t.Errorf("expected 'Found 2 closed ticket(s)' (parent + closed child), got: %s", output)
+		}
+		if !strings.Contains(output, "1 deletable") {
+			t.Errorf("expected '1 deletable' (closed child only), got: %s", output)
+		}
+		if !strings.Contains(output, "1 blocked") {
+			t.Errorf("expected '1 blocked' (parent), got: %s", output)
+		}
+		if !strings.Contains(output, "has non-closed children") {
+			t.Errorf("expected 'has non-closed children', got: %s", output)
 		}
 	})
 }

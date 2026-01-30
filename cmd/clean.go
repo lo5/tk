@@ -16,8 +16,8 @@ By default, performs a dry-run showing what would be deleted.
 Use --fix to actually delete the tickets.
 
 Refuses deletion if a closed ticket:
-  - Has dependants (other tickets depend on it)
-  - Has children (other tickets have it as parent)
+  - Has dependants (other tickets depend on it, regardless of status)
+  - Has non-closed children (other tickets have it as parent and are open/in_progress)
   - Has bidirectional links
 
 This ensures that only truly obsolete closed tickets are removed.`,
@@ -64,11 +64,17 @@ func runClean(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Check for children
+		// Check for children (only non-closed children block deletion)
 		children := findChildren(allTickets, t.ID)
-		if len(children) > 0 {
+		var nonClosedChildren []*ticket.Ticket
+		for _, child := range children {
+			if child.Status != ticket.StatusClosed {
+				nonClosedChildren = append(nonClosedChildren, child)
+			}
+		}
+		if len(nonClosedChildren) > 0 {
 			ct.blocked = true
-			ct.reason = "has children"
+			ct.reason = "has non-closed children"
 			cleanable = append(cleanable, ct)
 			continue
 		}
