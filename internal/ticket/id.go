@@ -15,8 +15,8 @@ import (
 // Format: {prefix}-{4-char-alphanumeric}
 // The prefix is extracted from the directory name by taking the first letter
 // of each hyphen/underscore-separated segment, or the first 3 chars as fallback.
-// The nanoid uses lowercase alphanumeric characters (a-z0-9), providing
-// 36^4 = 1,679,616 possible IDs per prefix.
+// The nanoid uses lowercase alphabetic characters (a-z), providing
+// 26^4 = 456,976 possible IDs per prefix.
 func GenerateID(cwd string) string {
 	dirName := filepath.Base(cwd)
 
@@ -48,8 +48,8 @@ func GenerateID(cwd string) string {
 		}
 	}
 
-	// 4-char nanoid with lowercase alphanumeric charset (a-z0-9)
-	alphabet := "abcdefghijklmnopqrstuvwxyz0123456789"
+	// 4-char nanoid with lowercase alphabetic charset (a-z)
+	alphabet := "abcdefghijklmnopqrstuvwxyz"
 	hashStr, err := gonanoid.Generate(alphabet, 4)
 	if err != nil {
 		// Fallback to timestamp-based (extremely unlikely)
