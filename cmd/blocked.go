@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/lo5/tk/internal/ticket"
@@ -13,13 +12,15 @@ var blockedCmd = &cobra.Command{
 	Use:   "blocked",
 	Short: "List blocked tickets",
 	Long: `List open/in-progress tickets with unresolved dependencies.
-Shows only the unclosed blockers for each ticket.
-Sorted by priority (ascending, 0=highest), then by ID.`,
+Shows only the unclosed blockers for each ticket.`,
 	RunE: runBlocked,
 }
 
+var blockedSort string
+
 func init() {
 	rootCmd.AddCommand(blockedCmd)
+	blockedCmd.Flags().StringVar(&blockedSort, "sort", "date", "Sort by field (date|priority|status)")
 }
 
 type blockedTicket struct {
@@ -33,13 +34,17 @@ func runBlocked(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := ticket.SortBy(tickets, blockedSort); err != nil {
+		return err
+	}
+
 	// Build status map
 	statusMap := make(map[string]ticket.Status)
 	for _, t := range tickets {
 		statusMap[t.ID] = t.Status
 	}
 
-	// Filter blocked tickets
+	// Filter blocked tickets (preserves sort order)
 	var blocked []blockedTicket
 	for _, t := range tickets {
 		// Must be open or in_progress
@@ -64,14 +69,6 @@ func runBlocked(cmd *cobra.Command, args []string) error {
 			blocked = append(blocked, blockedTicket{ticket: t, blockers: blockers})
 		}
 	}
-
-	// Sort by priority, then by ID
-	sort.Slice(blocked, func(i, j int) bool {
-		if blocked[i].ticket.Priority != blocked[j].ticket.Priority {
-			return blocked[i].ticket.Priority < blocked[j].ticket.Priority
-		}
-		return blocked[i].ticket.ID < blocked[j].ticket.ID
-	})
 
 	// Print
 	for _, b := range blocked {

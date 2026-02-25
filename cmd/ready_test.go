@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestReadyCommand tests the ready command
@@ -202,7 +203,7 @@ func TestReadySortingByPriority(t *testing.T) {
 		id4, _ := ctx.exec("new", "Priority 4", "--priority", "4")
 		id4 = strings.TrimSpace(id4)
 
-		output, _ := ctx.exec("ready")
+		output, _ := ctx.exec("ready", "--sort", "priority")
 
 		// Find positions
 		pos0 := strings.Index(output, id0)
@@ -235,7 +236,7 @@ func TestReadySortingByPriority(t *testing.T) {
 		id2, _ := ctx.exec("new", "Second", "--priority", "2")
 		id2 = strings.TrimSpace(id2)
 
-		output, _ := ctx.exec("ready")
+		output, _ := ctx.exec("ready", "--sort", "priority")
 
 		// Both should be in output and sorted by ID
 		if !strings.Contains(output, id1) || !strings.Contains(output, id2) {
@@ -254,6 +255,79 @@ func TestReadySortingByPriority(t *testing.T) {
 			if pos2 > pos1 {
 				t.Error("tickets with same priority should be sorted by ID")
 			}
+		}
+	})
+}
+
+// TestReadySortFlag tests the --sort flag on the ready command
+func TestReadySortFlag(t *testing.T) {
+	t.Run("sort priority", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		id0, _ := ctx.exec("new", "High", "--priority", "0")
+		id0 = strings.TrimSpace(id0)
+
+		id4, _ := ctx.exec("new", "Low", "--priority", "4")
+		id4 = strings.TrimSpace(id4)
+
+		output, _ := ctx.exec("ready", "--sort", "priority")
+
+		pos0 := strings.Index(output, id0)
+		pos4 := strings.Index(output, id4)
+
+		if pos0 == -1 || pos4 == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		if pos0 > pos4 {
+			t.Error("priority 0 should appear before priority 4")
+		}
+	})
+
+	t.Run("sort date newest first", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		id1, _ := ctx.exec("new", "Older")
+		id1 = strings.TrimSpace(id1)
+
+		id2, _ := ctx.exec("new", "Newer")
+		id2 = strings.TrimSpace(id2)
+
+		// Explicitly set timestamps so ordering is unambiguous
+		now := time.Now()
+		s := ctx.store()
+		t1, _ := s.Get(id1)
+		t2, _ := s.Get(id2)
+		t1.Created = now.Add(-1 * time.Hour)
+		t2.Created = now
+		s.Update(t1)
+		s.Update(t2)
+
+		output, _ := ctx.exec("ready", "--sort", "date")
+
+		pos1 := strings.Index(output, id1)
+		pos2 := strings.Index(output, id2)
+
+		if pos1 == -1 || pos2 == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		if pos2 > pos1 {
+			t.Error("newer ticket should appear first with --sort date")
+		}
+	})
+
+	t.Run("sort invalid returns error", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		ctx.exec("new", "Test")
+
+		_, err := ctx.exec("ready", "--sort", "bad")
+		if err == nil {
+			t.Error("expected error for invalid sort field")
 		}
 	})
 }
@@ -428,7 +502,7 @@ func TestReadyDefaultPriority(t *testing.T) {
 		idLow, _ := ctx.exec("new", "Low", "--priority", "4")
 		idLow = strings.TrimSpace(idLow)
 
-		output, _ := ctx.exec("ready")
+		output, _ := ctx.exec("ready", "--sort", "priority")
 
 		// Find positions
 		posHigh := strings.Index(output, idHigh)

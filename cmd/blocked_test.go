@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestBlockedCommand tests the blocked command
@@ -266,7 +267,7 @@ func TestBlockedSorting(t *testing.T) {
 		id4 = strings.TrimSpace(id4)
 		ctx.exec("dep", id4, dep)
 
-		output, _ := ctx.exec("blocked")
+		output, _ := ctx.exec("blocked", "--sort", "priority")
 
 		// Find positions
 		pos0 := strings.Index(output, id0)
@@ -304,7 +305,7 @@ func TestBlockedSorting(t *testing.T) {
 		id2 = strings.TrimSpace(id2)
 		ctx.exec("dep", id2, dep)
 
-		output, _ := ctx.exec("blocked")
+		output, _ := ctx.exec("blocked", "--sort", "priority")
 
 		// Both should be in output
 		if !strings.Contains(output, id1) || !strings.Contains(output, id2) {
@@ -323,6 +324,94 @@ func TestBlockedSorting(t *testing.T) {
 			if pos2 > pos1 {
 				t.Error("tickets with same priority should be sorted by ID")
 			}
+		}
+	})
+}
+
+// TestBlockedSortFlag tests the --sort flag on the blocked command
+func TestBlockedSortFlag(t *testing.T) {
+	t.Run("sort priority", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		dep, _ := ctx.exec("new", "Dep")
+		dep = strings.TrimSpace(dep)
+
+		id0, _ := ctx.exec("new", "High", "--priority", "0")
+		id0 = strings.TrimSpace(id0)
+		ctx.exec("dep", id0, dep)
+
+		id4, _ := ctx.exec("new", "Low", "--priority", "4")
+		id4 = strings.TrimSpace(id4)
+		ctx.exec("dep", id4, dep)
+
+		output, _ := ctx.exec("blocked", "--sort", "priority")
+
+		pos0 := strings.Index(output, id0)
+		pos4 := strings.Index(output, id4)
+
+		if pos0 == -1 || pos4 == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		if pos0 > pos4 {
+			t.Error("priority 0 should appear before priority 4")
+		}
+	})
+
+	t.Run("sort date newest first", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		dep, _ := ctx.exec("new", "Dep")
+		dep = strings.TrimSpace(dep)
+
+		id1, _ := ctx.exec("new", "Older")
+		id1 = strings.TrimSpace(id1)
+		ctx.exec("dep", id1, dep)
+
+		id2, _ := ctx.exec("new", "Newer")
+		id2 = strings.TrimSpace(id2)
+		ctx.exec("dep", id2, dep)
+
+		// Explicitly set timestamps so ordering is unambiguous
+		now := time.Now()
+		s := ctx.store()
+		t1, _ := s.Get(id1)
+		t2, _ := s.Get(id2)
+		t1.Created = now.Add(-1 * time.Hour)
+		t2.Created = now
+		s.Update(t1)
+		s.Update(t2)
+
+		output, _ := ctx.exec("blocked", "--sort", "date")
+
+		pos1 := strings.Index(output, id1)
+		pos2 := strings.Index(output, id2)
+
+		if pos1 == -1 || pos2 == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		if pos2 > pos1 {
+			t.Error("newer ticket should appear first with --sort date")
+		}
+	})
+
+	t.Run("sort invalid returns error", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		dep, _ := ctx.exec("new", "Dep")
+		dep = strings.TrimSpace(dep)
+
+		id, _ := ctx.exec("new", "Test")
+		id = strings.TrimSpace(id)
+		ctx.exec("dep", id, dep)
+
+		_, err := ctx.exec("blocked", "--sort", "bad")
+		if err == nil {
+			t.Error("expected error for invalid sort field")
 		}
 	})
 }

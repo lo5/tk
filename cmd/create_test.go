@@ -35,6 +35,9 @@ func setupTestCmd(t *testing.T) (*testContext, func()) {
 		newExternalRef = ""
 		newParent = ""
 		listStatus = ""
+		listSort = "date"
+		blockedSort = "date"
+		readySort = "priority"
 		closedLimit = 20
 		rmForce = false
 		pruneFix = false

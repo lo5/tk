@@ -16,7 +16,8 @@ tk ls --status=open   # List all open tickets
 
 ### Finding Work
 
-- `tk ready` - Show open/in-progress tickets with all dependencies resolved (sorted by priority)
+- `tk ready` - Show open/in-progress tickets with all dependencies resolved (sorted by priority ascending, 0=highest)
+- `tk ready --sort date` - Same, sorted by creation date (newest first)
 - `tk show <id>` - Detailed ticket view with metadata and relationships
 - `tk start <id>` - Set status to in_progress (claim work)
 - `tk ls` - List all tickets

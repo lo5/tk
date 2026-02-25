@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestListCommand tests the list command
@@ -148,20 +149,28 @@ func TestListSorting(t *testing.T) {
 		}
 	})
 
-	t.Run("sorted by ID", func(t *testing.T) {
+	t.Run("default sort is newest first", func(t *testing.T) {
 		ctx, cleanup := setupTestCmd(t)
 		defer cleanup()
 
-		// Create tickets
 		id1, _ := ctx.exec("new", "First")
 		id1 = strings.TrimSpace(id1)
 
 		id2, _ := ctx.exec("new", "Second")
 		id2 = strings.TrimSpace(id2)
 
+		// Explicitly set timestamps so id2 is definitively newer
+		now := time.Now()
+		s := ctx.store()
+		t1, _ := s.Get(id1)
+		t2, _ := s.Get(id2)
+		t1.Created = now.Add(-1 * time.Hour)
+		t2.Created = now
+		s.Update(t1)
+		s.Update(t2)
+
 		output, _ := ctx.exec("ls")
 
-		// Find positions
 		pos1 := strings.Index(output, id1)
 		pos2 := strings.Index(output, id2)
 
@@ -169,15 +178,8 @@ func TestListSorting(t *testing.T) {
 			t.Fatal("both tickets should be in output")
 		}
 
-		// Verify alphabetical ordering
-		if id1 < id2 {
-			if pos1 > pos2 {
-				t.Error("tickets should be sorted by ID")
-			}
-		} else {
-			if pos2 > pos1 {
-				t.Error("tickets should be sorted by ID")
-			}
+		if pos2 > pos1 {
+			t.Error("newer ticket (id2) should appear before older ticket (id1) with default date sort")
 		}
 	})
 }
@@ -402,6 +404,120 @@ func TestListMissingTicketsDirectory(t *testing.T) {
 		trimmed := strings.TrimSpace(output)
 		if trimmed != "" {
 			t.Errorf("expected empty output for missing directory, got: %s", output)
+		}
+	})
+}
+
+// TestListSortFlag tests the --sort flag
+func TestListSortFlag(t *testing.T) {
+	t.Run("sort date explicit newest first", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		id1, _ := ctx.exec("new", "Older")
+		id1 = strings.TrimSpace(id1)
+
+		id2, _ := ctx.exec("new", "Newer")
+		id2 = strings.TrimSpace(id2)
+
+		// Explicitly set timestamps so ordering is unambiguous
+		now := time.Now()
+		s := ctx.store()
+		t1, _ := s.Get(id1)
+		t2, _ := s.Get(id2)
+		t1.Created = now.Add(-1 * time.Hour)
+		t2.Created = now
+		s.Update(t1)
+		s.Update(t2)
+
+		output, _ := ctx.exec("ls", "--sort", "date")
+
+		pos1 := strings.Index(output, id1)
+		pos2 := strings.Index(output, id2)
+
+		if pos1 == -1 || pos2 == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		if pos2 > pos1 {
+			t.Error("newer ticket should appear first with --sort date")
+		}
+	})
+
+	t.Run("sort priority ascending", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		id0, _ := ctx.exec("new", "High", "--priority", "0")
+		id0 = strings.TrimSpace(id0)
+
+		id4, _ := ctx.exec("new", "Low", "--priority", "4")
+		id4 = strings.TrimSpace(id4)
+
+		output, _ := ctx.exec("ls", "--sort", "priority")
+
+		pos0 := strings.Index(output, id0)
+		pos4 := strings.Index(output, id4)
+
+		if pos0 == -1 || pos4 == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		if pos0 > pos4 {
+			t.Error("priority 0 should appear before priority 4")
+		}
+	})
+
+	t.Run("sort status alphabetical", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		idOpen, _ := ctx.exec("new", "Open Ticket")
+		idOpen = strings.TrimSpace(idOpen)
+
+		idClosed, _ := ctx.exec("new", "Closed Ticket")
+		idClosed = strings.TrimSpace(idClosed)
+		ctx.exec("close", idClosed)
+
+		output, _ := ctx.exec("ls", "--sort", "status")
+
+		posOpen := strings.Index(output, idOpen)
+		posClosed := strings.Index(output, idClosed)
+
+		if posOpen == -1 || posClosed == -1 {
+			t.Fatal("both tickets should be in output")
+		}
+
+		// "closed" < "open" alphabetically
+		if posClosed > posOpen {
+			t.Error("closed status should appear before open status with --sort status")
+		}
+	})
+
+	t.Run("sort invalid field returns error", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		ctx.exec("new", "Test")
+
+		_, err := ctx.exec("ls", "--sort", "bad")
+		if err == nil {
+			t.Error("expected error for invalid sort field")
+		}
+	})
+
+	t.Run("default same as sort date", func(t *testing.T) {
+		ctx, cleanup := setupTestCmd(t)
+		defer cleanup()
+
+		ctx.exec("new", "First")
+		ctx.exec("new", "Second")
+
+		outputDefault, _ := ctx.exec("ls")
+		outputDate, _ := ctx.exec("ls", "--sort", "date")
+
+		if outputDefault != outputDate {
+			t.Error("default output should match --sort date output")
 		}
 	})
 }

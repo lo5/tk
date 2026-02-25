@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/lo5/tk/internal/ticket"
@@ -18,10 +17,12 @@ var listCmd = &cobra.Command{
 }
 
 var listStatus string
+var listSort string
 
 func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().StringVar(&listStatus, "status", "", "Filter by status (open|in_progress|closed)")
+	listCmd.Flags().StringVar(&listSort, "sort", "date", "Sort by field (date|priority|status)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -42,10 +43,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		tickets = filtered
 	}
 
-	// Sort by ID for consistent output
-	sort.Slice(tickets, func(i, j int) bool {
-		return tickets[i].ID < tickets[j].ID
-	})
+	if err := ticket.SortBy(tickets, listSort); err != nil {
+		return err
+	}
 
 	for _, t := range tickets {
 		depStr := ""

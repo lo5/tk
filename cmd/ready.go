@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/lo5/tk/internal/ticket"
 	"github.com/spf13/cobra"
@@ -11,18 +10,24 @@ import (
 var readyCmd = &cobra.Command{
 	Use:   "ready",
 	Short: "List ready tickets",
-	Long: `List open/in-progress tickets with all dependencies resolved.
-Sorted by priority (ascending, 0=highest), then by ID.`,
-	RunE: runReady,
+	Long:  `List open/in-progress tickets with all dependencies resolved.`,
+	RunE:  runReady,
 }
+
+var readySort string
 
 func init() {
 	rootCmd.AddCommand(readyCmd)
+	readyCmd.Flags().StringVar(&readySort, "sort", "priority", "Sort by field (date|priority|status)")
 }
 
 func runReady(cmd *cobra.Command, args []string) error {
 	tickets, err := store.List()
 	if err != nil {
+		return err
+	}
+
+	if err := ticket.SortBy(tickets, readySort); err != nil {
 		return err
 	}
 
@@ -32,7 +37,7 @@ func runReady(cmd *cobra.Command, args []string) error {
 		statusMap[t.ID] = t.Status
 	}
 
-	// Filter ready tickets
+	// Filter ready tickets (preserves sort order)
 	var ready []*ticket.Ticket
 	for _, t := range tickets {
 		// Must be open or in_progress
@@ -53,14 +58,6 @@ func runReady(cmd *cobra.Command, args []string) error {
 			ready = append(ready, t)
 		}
 	}
-
-	// Sort by priority, then by ID
-	sort.Slice(ready, func(i, j int) bool {
-		if ready[i].Priority != ready[j].Priority {
-			return ready[i].Priority < ready[j].Priority
-		}
-		return ready[i].ID < ready[j].ID
-	})
 
 	// Print
 	for _, t := range ready {
